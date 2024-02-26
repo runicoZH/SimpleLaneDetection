@@ -7,13 +7,13 @@
 #include <tuple>
 #include <vector>
 
-namespace line_detection {
+namespace lane_detection {
 
-class LineDetector {
+class LaneDetector {
    public:
-    LineDetector(){};
+    LaneDetector(){};
 
-    std::tuple<cv::Vec4i, cv::Vec4i> find_lines(const cv::Mat &frame);
+    std::tuple<cv::Vec4i, cv::Vec4i> find_lanes(const cv::Mat &frame);
 
    private:
     std::queue<int> past_left_intercepts_;
@@ -30,8 +30,19 @@ class LineDetector {
                                    int new_intercept, int &current_sum);
     float moving_average_slopes_(std::queue<float> &past_slopes,
                                  float new_slope, float &current_sum);
+
+    cv::Mat filter_image(const cv::Mat &frame);
+
+    cv::Mat mask_image(const cv::Mat &frame);
+
+    cv::Mat edge_detection(const cv::Mat &frame);
+
+    void display_process(const cv::Mat &base_image,
+                         const cv::Mat &filtered_image,
+                         const cv::Mat &masked_image,
+                         const cv::Mat &line_image);
 };
 
-}  // namespace line_detection
+}  // namespace lane_detection
 
 #endif
