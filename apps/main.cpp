@@ -3,7 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <tuple>
 
-#include "line_detector.h"
+#include <line_detector.h>
 
 cv::Mat filter_image(const cv::Mat &frame) {
     cv::Mat hls_frame;
