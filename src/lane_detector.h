@@ -11,11 +11,14 @@ namespace lane_detection {
 
 class LaneDetector {
    public:
-    LaneDetector(){};
+    LaneDetector(int width, int height) : width_{width}, height_{height} {};
 
     std::tuple<cv::Vec4i, cv::Vec4i> find_lanes(const cv::Mat &frame);
 
    private:
+    const int width_;
+    const int height_;
+
     std::queue<int> past_left_intercepts_;
     int sum_left_intercepts_ = 0;
     std::queue<float> past_left_slopes_;
@@ -31,16 +34,19 @@ class LaneDetector {
     float moving_average_slopes_(std::queue<float> &past_slopes,
                                  float new_slope, float &current_sum);
 
-    cv::Mat filter_image(const cv::Mat &frame);
+    cv::Mat filter_image_(const cv::Mat &frame);
 
-    cv::Mat mask_image(const cv::Mat &frame);
+    cv::Mat mask_image_(const cv::Mat &frame);
 
-    cv::Mat edge_detection(const cv::Mat &frame);
+    cv::Mat edge_detection_(const cv::Mat &frame);
 
-    void display_process(const cv::Mat &base_image,
-                         const cv::Mat &filtered_image,
-                         const cv::Mat &masked_image,
-                         const cv::Mat &line_image);
+    std::tuple<bool, float, int, bool, float, int> line_detection_(
+        const cv::Mat &frame);
+
+    void display_process_(const cv::Mat &base_image,
+                          const cv::Mat &filtered_image,
+                          const cv::Mat &masked_image,
+                          const cv::Mat &line_image);
 };
 
 }  // namespace lane_detection

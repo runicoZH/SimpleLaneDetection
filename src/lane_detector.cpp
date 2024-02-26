@@ -6,72 +6,45 @@ namespace lane_detection {
 
 std::tuple<cv::Vec4i, cv::Vec4i> LaneDetector::find_lanes(
     const cv::Mat &frame) {
-    cv::Mat filtered_image = filter_image(frame);
-    cv::Mat masked_image = mask_image(filtered_image);
-    cv::Mat edge_image = edge_detection(masked_image);
+    cv::Mat filtered_image = filter_image_(frame);
+    cv::Mat masked_image = mask_image_(filtered_image);
+    cv::Mat edge_image = edge_detection_(masked_image);
+    display_process_(frame, filtered_image, masked_image, edge_image);
 
-    std::vector<cv::Vec4i> output_lines;
-    cv::HoughLinesP(edge_image, output_lines, 1, CV_PI / 180, 50, 60, 10);
+    auto [left_ret, left_slope, left_intercept, right_ret, right_slope,
+          right_intercept] = line_detection_(edge_image);
 
-    std::vector<float> left_slopes;
-    std::vector<int> left_intercepts;
-    std::vector<float> right_slopes;
-    std::vector<int> right_intercepts;
-    for (size_t i = 0; i < output_lines.size(); i++) {
-        cv::Vec4i l = output_lines[i];
-        if (l[3] - l[1] == 0 || l[2] - l[0] == 0) {
-            continue;
-        }
-        float slope = float(l[3] - l[1]) / float(l[2] - l[0]);
-        int intercept = (frame.rows - l[1] + (slope * l[0])) / slope;
-        if (slope < -0.5 && intercept < frame.cols / 2) {
-            left_slopes.push_back(slope);
-            left_intercepts.push_back(intercept);
-        }
-
-        if (slope > 0.5 && intercept > frame.cols / 2) {
-            right_slopes.push_back(slope);
-            right_intercepts.push_back(intercept);
-        }
-    }
-    int x1;
-    cv::Vec4i left_line;
-    if (left_slopes.size() > 0) {
-        float left_avg_slope =
-            std::reduce(left_slopes.begin(), left_slopes.end()) /
-            float(left_slopes.size());
-        int left_avg_intercept =
-            std::reduce(left_intercepts.begin(), left_intercepts.end()) /
-            int(left_intercepts.size());
-
-        left_avg_slope = moving_average_slopes_(
-            past_left_slopes_, left_avg_slope, sum_left_slopes_);
+    float left_avg_slope;
+    int left_avg_intercept;
+    if (left_ret) {
+        left_avg_slope = moving_average_slopes_(past_left_slopes_, left_slope,
+                                                sum_left_slopes_);
         left_avg_intercept = moving_average_intercepts_(
-            past_left_intercepts_, left_avg_intercept, sum_left_intercepts_);
-
-        x1 = left_avg_intercept - (frame.rows / left_avg_slope);
-        left_line = cv::Vec4i(x1, 0, left_avg_intercept, frame.rows);
+            past_left_intercepts_, left_intercept, sum_left_intercepts_);
+    } else {
+        left_avg_slope = sum_left_slopes_ / int(past_left_slopes_.size());
+        left_avg_intercept =
+            sum_left_intercepts_ / int(past_left_intercepts_.size());
     }
 
-    cv::Vec4i right_line;
-    if (right_slopes.size() > 0) {
-        float right_avg_slope =
-            std::reduce(right_slopes.begin(), right_slopes.end()) /
-            float(right_slopes.size());
-        int right_avg_intercept =
-            std::reduce(right_intercepts.begin(), right_intercepts.end()) /
-            int(right_intercepts.size());
+    int x1_left = left_avg_intercept - (width_ / left_avg_slope);
+    cv::Vec4i left_line = cv::Vec4i(x1_left, 0, left_avg_intercept, width_);
 
+    float right_avg_slope;
+    int right_avg_intercept;
+    if (right_ret) {
         right_avg_slope = moving_average_slopes_(
-            past_right_slopes_, right_avg_slope, sum_right_slopes_);
+            past_right_slopes_, right_slope, sum_right_slopes_);
         right_avg_intercept = moving_average_intercepts_(
-            past_right_intercepts_, right_avg_intercept, sum_right_intercepts_);
-
-        x1 = right_avg_intercept - (frame.rows / right_avg_slope);
-        right_line = cv::Vec4i(x1, 0, right_avg_intercept, frame.rows);
+            past_right_intercepts_, right_intercept, sum_right_intercepts_);
+    } else {
+        right_avg_slope = sum_right_slopes_ / int(past_right_slopes_.size());
+        right_avg_intercept =
+            sum_right_intercepts_ / int(past_right_intercepts_.size());
     }
 
-    display_process(frame, filtered_image, masked_image, edge_image);
+    int x1_right = right_avg_intercept - (width_ / right_avg_slope);
+    cv::Vec4i right_line = cv::Vec4i(x1_right, 0, right_avg_intercept, width_);
 
     return {left_line, right_line};
 }
@@ -104,7 +77,7 @@ float LaneDetector::moving_average_slopes_(std::queue<float> &past_slopes,
     return current_sum / float(past_slopes.size());
 }
 
-cv::Mat LaneDetector::filter_image(const cv::Mat &frame) {
+cv::Mat LaneDetector::filter_image_(const cv::Mat &frame) {
     cv::Mat hls_frame;
     cv::cvtColor(frame, hls_frame, cv::COLOR_BGR2HLS);
 
@@ -125,9 +98,9 @@ cv::Mat LaneDetector::filter_image(const cv::Mat &frame) {
     return filtered_rgb_frame;
 }
 
-cv::Mat LaneDetector::mask_image(const cv::Mat &frame) {
-    cv::Mat mask = cv::Mat(frame.rows, frame.cols, CV_8U, 1);
-    mask(cv::Rect(0, 0, frame.cols, round(frame.rows * 0.3))) = 0;
+cv::Mat LaneDetector::mask_image_(const cv::Mat &frame) {
+    cv::Mat mask = cv::Mat(width_, height_, CV_8U, 1);
+    mask(cv::Rect(0, 0, height_, round(width_ * 0.3))) = 0;
 
     cv::Mat masked_image;
     cv::bitwise_and(frame, frame, masked_image, mask);
@@ -135,7 +108,7 @@ cv::Mat LaneDetector::mask_image(const cv::Mat &frame) {
     return masked_image;
 }
 
-cv::Mat LaneDetector::edge_detection(const cv::Mat &frame) {
+cv::Mat LaneDetector::edge_detection_(const cv::Mat &frame) {
     cv::Mat grayscale_image;
     cv::cvtColor(frame, grayscale_image, cv::COLOR_BGR2GRAY);
 
@@ -148,10 +121,66 @@ cv::Mat LaneDetector::edge_detection(const cv::Mat &frame) {
     return edge_image;
 }
 
-void LaneDetector::display_process(const cv::Mat &base_image,
-                                   const cv::Mat &filtered_image,
-                                   const cv::Mat &masked_image,
-                                   const cv::Mat &line_image) {
+std::tuple<bool, float, int, bool, float, int> LaneDetector::line_detection_(
+    const cv::Mat &frame) {
+    std::vector<cv::Vec4i> output_lines;
+    cv::HoughLinesP(frame, output_lines, 1, CV_PI / 180, 50, 60, 10);
+
+    std::vector<float> left_slopes;
+    std::vector<int> left_intercepts;
+    std::vector<float> right_slopes;
+    std::vector<int> right_intercepts;
+    for (size_t i = 0; i < output_lines.size(); i++) {
+        cv::Vec4i l = output_lines[i];
+        if (l[3] - l[1] == 0 || l[2] - l[0] == 0) {
+            continue;
+        }
+        float slope = float(l[3] - l[1]) / float(l[2] - l[0]);
+        int intercept = (width_ - l[1] + (slope * l[0])) / slope;
+        if (slope < -0.5 && intercept < height_ / 2) {
+            left_slopes.push_back(slope);
+            left_intercepts.push_back(intercept);
+        }
+
+        if (slope > 0.5 && intercept > height_ / 2) {
+            right_slopes.push_back(slope);
+            right_intercepts.push_back(intercept);
+        }
+    }
+
+    float left_avg_slope;
+    int left_avg_intercept;
+    bool left_ret = false;
+    if (left_slopes.size() > 0) {
+        left_ret = true;
+        left_avg_slope = std::reduce(left_slopes.begin(), left_slopes.end()) /
+                         float(left_slopes.size());
+        left_avg_intercept =
+            std::reduce(left_intercepts.begin(), left_intercepts.end()) /
+            int(left_intercepts.size());
+    }
+
+    bool right_ret = false;
+    float right_avg_slope;
+    int right_avg_intercept;
+    if (right_slopes.size() > 0) {
+        right_ret = true;
+        right_avg_slope =
+            std::reduce(right_slopes.begin(), right_slopes.end()) /
+            float(right_slopes.size());
+        right_avg_intercept =
+            std::reduce(right_intercepts.begin(), right_intercepts.end()) /
+            int(right_intercepts.size());
+    }
+
+    return {left_ret,  left_avg_slope,  left_avg_intercept,
+            right_ret, right_avg_slope, right_avg_intercept};
+}
+
+void LaneDetector::display_process_(const cv::Mat &base_image,
+                                    const cv::Mat &filtered_image,
+                                    const cv::Mat &masked_image,
+                                    const cv::Mat &line_image) {
     cv::Mat resized_base_image;
     cv::resize(base_image, resized_base_image, cv::Size(960, 540));
 

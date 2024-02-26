@@ -31,11 +31,17 @@ int main(int argc, char *argv[]) {
     cv::VideoCapture cap(
         "/home/nico/workspace/LaneDetection/resources/dashcam.mp4");
 
-    lane_detection::LaneDetector lane_detector;
     if (!cap.isOpened()) {
         std::cerr << "ERROR! Unable to open camera\n";
         return -1;
     }
+
+    cap.read(frame);
+    if (frame.empty()) {
+        std::cerr << "ERROR! opened frame is empty \n";
+    }
+
+    lane_detection::LaneDetector lane_detector(frame.rows, frame.cols);
 
     while (true) {
         cap.read(frame);
